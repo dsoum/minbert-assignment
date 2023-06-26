@@ -63,8 +63,8 @@ class BertSelfAttention(nn.Module):
     
     # next, we need to concat multi-heads and recover the original shape [bs, seq_len, num_attention_heads * attention_head_size = hidden_size]
     v_1 = v_1.transpose(1,2)
-    bs, seq_len = value.shape[:2]
-    v_1 = v_1.view(bs, seq_len,self.num_attention_heads*self.attention_head_size)
+    bs, seq_len = v_1.shape[:2]
+    v_1 = v_1.reshape(bs, seq_len,self.num_attention_heads*self.attention_head_size)
 
     #raise NotImplementedError
     return v_1

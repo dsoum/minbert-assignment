@@ -24,6 +24,10 @@ class BertSelfAttention(nn.Module):
     self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
   def transform(self, x, linear_layer):
+    """
+    x: [bs, seq_len, hidden_state]
+    proj: [bs, num_attention_heads, seq_len, attention_head_size]
+    """
     # the corresponding linear_layer of k, v, q are used to project the hidden_state (x)
     bs, seq_len = x.shape[:2]
     proj = linear_layer(x)
@@ -35,19 +39,35 @@ class BertSelfAttention(nn.Module):
     return proj
 
   def attention(self, key, query, value, attention_mask):
+    """
+    key, query, value: [bs, num_attention_heads, seq_len, attention_head_size]
+    attention_mask: [bs, 1, 1, seq_len]
+    v_1: [bs, num_a]
+    """
+    # todo
     # each attention is calculated following eq (1) of https://arxiv.org/pdf/1706.03762.pdf
     # attention scores are calculated by multiply query and key 
     # and get back a score matrix S of [bs, num_attention_heads, seq_len, seq_len]
     # S[*, i, j, k] represents the (unnormalized)attention score between the j-th and k-th token, given by i-th attention head
     # before normalizing the scores, use the attention mask to mask out the padding token scores
     # Note again: in the attention_mask non-padding tokens with 0 and padding tokens with a large negative number 
+    d_k = query.size(-1)
+    S = torch.matmul(query, key.transpose(-2,-1))/math.sqrt(d_k)  # S: [bs, num_attention_heads, seq_len, seq_len]
+    S = S.masked_fill(attention_mask!=0, -1e9)
 
     # normalize the scores
+    scores = F.softmax(S,dim=-1)
 
     # multiply the attention scores to the value and get back V' 
-
+    v_1 = torch.matmul(scores, value)    # v_1: [bs, num_attention_heads, seq_len, seq_len]
+    
     # next, we need to concat multi-heads and recover the original shape [bs, seq_len, num_attention_heads * attention_head_size = hidden_size]
-    raise NotImplementedError
+    v_1 = v_1.transpose(1,2)
+    bs, seq_len = value.shape[:2]
+    v_1 = v_1.view(bs, seq_len,self.num_attention_heads*self.attention_head_size)
+
+    #raise NotImplementedError
+    return v_1
 
   def forward(self, hidden_states, attention_mask):
     """
@@ -92,7 +112,8 @@ class BertLayer(nn.Module):
     ln_layer: the layer norm to be applied
     """
     # todo
-    raise NotImplementedError
+    #raise NotImplementedError
+    return ln_layer(input + dropout(dense_layer(output)))
 
   def forward(self, hidden_states, attention_mask):
     """
@@ -106,15 +127,21 @@ class BertLayer(nn.Module):
     """
     # todo
     # multi-head attention w/ self.self_attention
+    after_multi_head = self.self_attention(hidden_states, attention_mask)
 
     # add-norm layer
+    after_add_norm = self.add_norm(hidden_states, after_multi_head,
+                                   self.attention_dense, self.attention_dropout, self.attention_layer_norm)
 
     # feed forward
+    after_feed_forward = self.interm_af(self.interm_dense(after_add_norm))
 
     # another add-norm layer
+    after_another_add_norm = self.add_norm(after_add_norm, after_feed_forward,
+                                   self.out_dense, self.out_dropout, self.out_layer_norm)
 
-
-    raise NotImplementedError
+    #raise NotImplementedError
+    return after_another_add_norm
 
 
 class BertModel(BertPreTrainedModel):
@@ -154,12 +181,14 @@ class BertModel(BertPreTrainedModel):
 
     # get word embedding from self.word_embedding
     # todo
-    inputs_embeds = None
+    #inputs_embeds
+    inputs_embeds = self.word_embedding(input_ids)
 
 
     # get position index and position embedding from self.pos_embedding
     pos_ids = self.position_ids[:, :seq_length]
-    pos_embeds = None
+    #pos_embeds = None
+    pos_embeds = self.pos_embedding(pos_ids)
 
     # get token type ids, since we are not consider token type, just a placeholder
     tk_type_ids = torch.zeros(input_shape, dtype=torch.long, device=input_ids.device)
@@ -172,7 +201,8 @@ class BertModel(BertPreTrainedModel):
     embeds = self.embed_layer_norm(embeds)
     embeds = self.embed_dropout(embeds)
 
-    raise NotImplementedError
+    #raise NotImplementedError
+    return embeds
 
   def encode(self, hidden_states, attention_mask):
     """
